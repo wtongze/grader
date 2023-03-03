@@ -5,6 +5,7 @@ import sys
 import subprocess
 import re
 import json
+import argparse
 from datetime import datetime
 
 
@@ -38,22 +39,28 @@ def execute(cmd: str):
 
 
 def main():
-  if (len(sys.argv) == 1):
-    print("python3 grader.py [<mapping.json>] <git repo path> [...<git repo path>]")
-    exit(-1)
+  parser = argparse.ArgumentParser(
+      prog='grader.py',
+      description='Count the commits inside git repositories for grading',
+      epilog='Source: https://github.com/wtongze/grader')
+
+  parser.add_argument('path', metavar="PATH", type=str, nargs='+',
+                      help='Paths of git repos')
+  parser.add_argument('-m', '--mapping', type=str, nargs='?',
+                      help='Path of mapping file')
+
+  args = parser.parse_args()
+  # print(args)
 
   mapping = {}
-  dirs = []
+  dirs = args.path
   try:
-    if (sys.argv[1].endswith('.json')):
-      f = open(sys.argv[1])
+    if args.mapping is not None:
+      f = open(args.mapping)
       mapping = json.load(f)
       f.close()
-      dirs = sys.argv[2:]
-    else:
-      dirs = sys.argv[1:]
   except:
-    pass
+    raise Exception("Couldn't read mapping file")
 
   currPath = os.getcwd()
 
@@ -70,8 +77,8 @@ def main():
     execute("git rev-parse --is-inside-work-tree")
 
     commitHashes = (
-      execute('git --no-pager log --pretty="format:%H"')).split('\n')
-  
+        execute('git --no-pager log --pretty="format:%H"')).split('\n')
+
     for commitHash in commitHashes:
       raw = execute(f'git show --stat "{commitHash}"')
 
@@ -94,7 +101,8 @@ def main():
 
       rawDate = re.search("Date:\s+(.+)\n", raw)
       if rawDate:
-        date = datetime.strptime(rawDate.groups()[0], "%a %b %d %H:%M:%S %Y %z")
+        date = datetime.strptime(
+            rawDate.groups()[0], "%a %b %d %H:%M:%S %Y %z")
       else:
         raise Exception(f"{commitHash}: Can't find date")
 
@@ -114,7 +122,7 @@ def main():
       commits.append(commit)
       authorSet.add((name, email))
     os.chdir(currPath)
-  
+
   print()
   if (len(mapping) == 0):
     print("Authors")
@@ -135,11 +143,11 @@ def main():
       commitDictByEmail[k] = []
     commitDictByEmail[k].append(commit)
 
+  # Print total stats
   emailMaxSize = len(max(commitDictByEmail.keys(), key=len))
-  
-  # Print stats
   seperator = " " * 3
-  cols = [("Email", emailMaxSize), ("Commits", 7), ("Files", 5), ("Inserts", 7), ("Deletes", 7), ("Total", 7)]
+  cols = [("Email", emailMaxSize), ("Commits", 7), ("Files", 5),
+          ("Inserts", 7), ("Deletes", 7), ("Total", 7)]
   for idx, (name, width) in enumerate(cols):
     if (idx == 0):
       print(name.ljust(width), end=seperator)
