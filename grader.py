@@ -158,7 +158,7 @@ def main():
     print("-" * width, end=seperator)
   print()
 
-  for k, v in commitDictByEmail.items():
+  for k, v in sorted(commitDictByEmail.items(), key=lambda x: x[0]):
     # Files, Inserts, Deletes
     total = [0, 0, 0]
     for c in v:
