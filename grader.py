@@ -6,7 +6,7 @@ import subprocess
 import re
 import json
 import argparse
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 class Commit:
@@ -38,19 +38,57 @@ def execute(cmd: str):
   return process.stdout.decode()
 
 
+def printStatistics(commitDictByEmail):
+  # Print total stats
+  emailMaxSize = len(max(commitDictByEmail.keys(), key=len))
+  seperator = " " * 3
+  cols = [("Email", emailMaxSize), ("Commits", 7), ("Files", 5),
+          ("Inserts", 7), ("Deletes", 7), ("Total", 7)]
+  for idx, (name, width) in enumerate(cols):
+    if (idx == 0):
+      print(name.ljust(width), end=seperator)
+    else:
+      print(name.rjust(width), end=seperator)
+  print()
+  for name, width in cols:
+    print("-" * width, end=seperator)
+  print()
+
+  contents = []
+  for k, v in commitDictByEmail.items():
+    # Files, Inserts, Deletes
+    total = [0, 0, 0]
+    for c in v:
+      total[0] += c.files
+      total[1] += c.insertions
+      total[2] += c.deletions
+    contents.append([k, len(v), *total, total[1] + total[2]])
+  
+  for content in sorted(contents, key=lambda c: c[5], reverse=True):
+    for idx, e in enumerate(cols):
+      if (idx == 0):
+        print(str(content[idx]).ljust(e[1]), end=seperator)
+      else:
+        print(str(content[idx]).rjust(e[1]), end=seperator)
+    print()
+
+
 def main():
   parser = argparse.ArgumentParser(
       prog='grader.py',
       description='Count the commits inside git repositories for grading',
       epilog='Source: https://github.com/wtongze/grader')
 
-  parser.add_argument('path', metavar="PATH", type=str, nargs='+',
-                      help='Paths of git repos')
+  parser.add_argument('-a', '--authors', action='store_true',
+                      help='show authors and their emails')
   parser.add_argument('-m', '--mapping', type=str, nargs='?',
-                      help='Path of mapping file')
+                      help='path of mapping file')
+  parser.add_argument('-w', '--weekly', type=lambda d: datetime.strptime(d, '%Y-%m-%d'),
+                      help='show weekly statistics starting from this date')
+  parser.add_argument('path', metavar="PATH", type=str, nargs='+',
+                      help='paths of git repos')
 
   args = parser.parse_args()
-  # print(args)
 
   mapping = {}
   dirs = args.path
@@ -102,7 +140,7 @@ def main():
       rawDate = re.search("Date:\s+(.+)\n", raw)
       if rawDate:
         date = datetime.strptime(
-            rawDate.groups()[0], "%a %b %d %H:%M:%S %Y %z")
+            rawDate.groups()[0], "%a %b %d %H:%M:%S %Y %z").replace(tzinfo=None)
       else:
         raise Exception(f"{commitHash}: Can't find date")
 
@@ -124,12 +162,6 @@ def main():
     os.chdir(currPath)
 
   print()
-  if (len(mapping) == 0):
-    print("Authors")
-    print("-" * 40)
-    for name, email in authorSet:
-      print(name.ljust(20), email)
-    print()
 
   commitDictByEmail = {}
   for commit in commits:
@@ -143,35 +175,36 @@ def main():
       commitDictByEmail[k] = []
     commitDictByEmail[k].append(commit)
 
-  # Print total stats
-  emailMaxSize = len(max(commitDictByEmail.keys(), key=len))
-  seperator = " " * 3
-  cols = [("Email", emailMaxSize), ("Commits", 7), ("Files", 5),
-          ("Inserts", 7), ("Deletes", 7), ("Total", 7)]
-  for idx, (name, width) in enumerate(cols):
-    if (idx == 0):
-      print(name.ljust(width), end=seperator)
-    else:
-      print(name.rjust(width), end=seperator)
-  print()
-  for name, width in cols:
-    print("-" * width, end=seperator)
-  print()
-
-  for k, v in sorted(commitDictByEmail.items(), key=lambda x: x[0]):
-    # Files, Inserts, Deletes
-    total = [0, 0, 0]
-    for c in v:
-      total[0] += c.files
-      total[1] += c.insertions
-      total[2] += c.deletions
-    content = [k, len(v), *total, total[1] + total[2]]
-    for idx, e in enumerate(cols):
-      if (idx == 0):
-        print(str(content[idx]).ljust(e[1]), end=seperator)
-      else:
-        print(str(content[idx]).rjust(e[1]), end=seperator)
+  if args.authors:
+    print("Authors")
+    print("-" * 40)
+    for name, email in authorSet:
+      print(name.ljust(20), email)
     print()
+  elif args.weekly:
+    start: datetime = args.weekly
+    now: datetime = datetime.now()
+    weekCounter = 1
+
+    while start < now:
+      end = start + timedelta(weeks=1)
+      if end > now:
+        end = now
+
+      weeklyCommitDictByEmail = {}
+      for k, v in commitDictByEmail.items():
+        filteredCommits = list(filter(lambda c: start <= c.date and c.date < end, v))
+        weeklyCommitDictByEmail[k] = filteredCommits
+
+      print(f"> Week {weekCounter}: [{start.date()} -> {end.date()})")
+      printStatistics(weeklyCommitDictByEmail)
+      print()
+
+      weekCounter += 1
+      start = end
+
+  else:
+    printStatistics(commitDictByEmail)
 
 
 main()
